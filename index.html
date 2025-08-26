@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spaceship Cave</title>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+    
+    <!-- Crosshair -->
+    <div class="crosshair" id="crosshair"></div>
+    
+    <!-- UI Panel -->
+    <div class="ui-panel" id="ui-panel">
+      <div class="speed-indicator">
+        <div>Speed: <span id="speed-value">0.00</span></div>
+        <div class="speed-bar">
+          <div class="speed-fill" id="speed-fill"></div>
+        </div>
+      </div>
+      <div class="controls-info">
+        <div>Mouse Sensitivity: <span id="sensitivity-value">1.0</span></div>
+        <div>W/S: Forward/Backward</div>
+        <div>Mouse: Look around</div>
+        <div>F: Debug mode</div>
+        <div>ESC: Release mouse</div>
+      </div>
+    </div>
+    
+    <!-- Pointer Lock Prompt -->
+    <div class="pointer-lock-prompt" id="pointer-lock-prompt">
+      <h2>🚀 Spaceship Controls</h2>
+      <p><strong>Click anywhere to capture mouse</strong></p>
+      <p>Use mouse to look around and steer your spaceship</p>
+      <p>W/S keys control forward/backward thrust</p>
+      <p>Press ESC to release mouse control</p>
+    </div>
+    
+    <!-- Boundary Warning -->
+    <div class="boundary-warning" id="boundary-warning" style="display: none;"></div>
+    
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
