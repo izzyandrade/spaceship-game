@@ -19,8 +19,12 @@ export class Spaceship {
   private readonly MAX_SPEED = 0.5;
   private readonly ACCELERATION = 0.02;
   private readonly DRAG_COEFFICIENT = 0.95;
-  private readonly MOUSE_SENSITIVITY = 0.003;
-  private readonly BANKING_AMOUNT = Math.PI / 6; // 30 degrees max bank
+  private readonly MOUSE_SENSITIVITY = 0.002; // More responsive
+  private readonly BANKING_AMOUNT = Math.PI / 8; // 22.5 degrees max bank
+  
+  // Movement thresholds (more permissive)
+  private readonly MOUSE_THRESHOLD = 0.1; // Lower threshold for responsiveness
+  private readonly LATERAL_MOVEMENT_FACTOR = 0.2; // Subtle lateral movement when turning
 
   constructor() {
     this.group = new THREE.Group();
@@ -84,21 +88,25 @@ export class Spaceship {
   }
 
   public update(controls: SpaceshipControls, deltaTime: number): void {
-    // Mouse controls for rotation (yaw and pitch)
-    this.targetRotation.y += controls.mouseX * this.MOUSE_SENSITIVITY;
-    this.targetRotation.x += controls.mouseY * this.MOUSE_SENSITIVITY;
+    // Apply mouse movement thresholds to prevent micro-movements
+    const mouseX = Math.abs(controls.mouseX) > this.MOUSE_THRESHOLD ? controls.mouseX : 0;
+    const mouseY = Math.abs(controls.mouseY) > this.MOUSE_THRESHOLD ? controls.mouseY : 0;
     
-    // Limit pitch to prevent over-rotation
-    this.targetRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.targetRotation.x));
+    // Mouse controls for rotation (yaw and pitch) with reduced sensitivity
+    this.targetRotation.y += mouseX * this.MOUSE_SENSITIVITY;
+    this.targetRotation.x += mouseY * this.MOUSE_SENSITIVITY;
+    
+    // Limit pitch to reasonable range
+    this.targetRotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, this.targetRotation.x));
 
     // Banking animation - roll into turns based on yaw change
-    const yawVelocity = controls.mouseX * this.MOUSE_SENSITIVITY;
-    this.targetRotation.z = -yawVelocity * this.BANKING_AMOUNT;
+    const yawInput = mouseX * this.MOUSE_SENSITIVITY;
+    this.targetRotation.z = -yawInput * this.BANKING_AMOUNT;
 
-    // Smooth rotation interpolation
-    this.group.rotation.x = THREE.MathUtils.lerp(this.group.rotation.x, this.targetRotation.x, 0.1);
-    this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.targetRotation.y, 0.1);
-    this.group.rotation.z = THREE.MathUtils.lerp(this.group.rotation.z, this.targetRotation.z, 0.05);
+    // Smooth rotation interpolation (more responsive)
+    this.group.rotation.x = THREE.MathUtils.lerp(this.group.rotation.x, this.targetRotation.x, 0.08);
+    this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.targetRotation.y, 0.08);
+    this.group.rotation.z = THREE.MathUtils.lerp(this.group.rotation.z, this.targetRotation.z, 0.06);
 
     // Reset acceleration
     this.acceleration.set(0, 0, 0);
@@ -112,6 +120,16 @@ export class Spaceship {
     }
     if (controls.backward) {
       this.acceleration.add(forwardDirection.multiplyScalar(-this.ACCELERATION * 0.5));
+    }
+
+    // Add subtle lateral movement when turning (like a real aircraft)
+    if (Math.abs(mouseX) > this.MOUSE_THRESHOLD) {
+      const rightDirection = new THREE.Vector3(1, 0, 0);
+      rightDirection.applyQuaternion(this.group.quaternion);
+      
+      // Move right when turning right (negative mouseX), left when turning left (positive mouseX)
+      const lateralForce = -mouseX * this.LATERAL_MOVEMENT_FACTOR * this.ACCELERATION;
+      this.acceleration.add(rightDirection.multiplyScalar(lateralForce));
     }
 
     // Apply acceleration to velocity

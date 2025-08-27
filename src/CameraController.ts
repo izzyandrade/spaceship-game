@@ -25,11 +25,8 @@ export class CameraController {
   private targetRoll: number;
   private currentRoll: number;
   
-  private readonly FOLLOW_SPEED = 0.08;
+  private readonly FOLLOW_SPEED = 0.1;
   private readonly DEBUG_SPEED = 0.2;
-  private readonly CAMERA_DAMPING = 0.15;
-  private readonly LOOK_AHEAD_FACTOR = 0.3;
-  private readonly BANKING_SENSITIVITY = 0.5;
   
   // Camera constraints
   private readonly MIN_HEIGHT = 0.5;
@@ -60,7 +57,6 @@ export class CameraController {
 
   public update(spaceship: Spaceship, debugControls: CameraDebugControls): void {
     const spaceshipPos = spaceship.getPosition();
-    const spaceshipVelocity = spaceship.getVelocity();
     
     // Handle zoom mode toggle (detect key press, not hold)
     if (debugControls.zoomToggle && !this.lastZoomToggleState) {
@@ -77,31 +73,25 @@ export class CameraController {
       this.cameraOffset.y = Math.max(this.cameraOffset.y - this.DEBUG_SPEED, this.MIN_HEIGHT);
     }
 
-    // Look-ahead position prediction based on spaceship velocity
-    this.lookAheadPosition.copy(spaceshipPos).add(
-      spaceshipVelocity.clone().multiplyScalar(this.LOOK_AHEAD_FACTOR)
-    );
-
-    // Calculate target camera position with spring-based following
-    this.targetPosition.copy(spaceshipPos).add(this.cameraOffset);
+    // Simple Ace Combat style camera: always behind ship at fixed offset
+    // Transform offset by ship's rotation so camera follows ship's orientation
+    const rotatedOffset = this.cameraOffset.clone();
+    rotatedOffset.applyQuaternion(spaceship.group.quaternion);
     
-    // Spring-based camera movement with damping
-    const spring = this.targetPosition.clone().sub(this.currentPosition);
-    this.cameraVelocity.add(spring.multiplyScalar(this.FOLLOW_SPEED));
-    this.cameraVelocity.multiplyScalar(this.CAMERA_DAMPING);
-    this.currentPosition.add(this.cameraVelocity);
+    // Camera position = ship position + rotated offset
+    this.targetPosition.copy(spaceshipPos).add(rotatedOffset);
     
+    // Smooth following (much more responsive than before)
+    this.currentPosition.lerp(this.targetPosition, 0.1);
     this.camera.position.copy(this.currentPosition);
 
-    // Camera banking based on spaceship's roll
+    // Always look directly at the spaceship (no prediction, just direct)
+    this.camera.lookAt(spaceshipPos);
+    
+    // Very subtle camera roll based on ship banking
     const spaceshipRoll = spaceship.group.rotation.z;
-    this.targetRoll = spaceshipRoll * this.BANKING_SENSITIVITY;
+    this.targetRoll = spaceshipRoll * 0.3; // Much more subtle than before
     this.currentRoll = THREE.MathUtils.lerp(this.currentRoll, this.targetRoll, 0.1);
-    
-    // Look at the look-ahead position for smoother tracking
-    this.camera.lookAt(this.lookAheadPosition);
-    
-    // Apply camera roll
     this.camera.rotateZ(this.currentRoll);
   }
 

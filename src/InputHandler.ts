@@ -7,7 +7,7 @@ export class InputHandler {
   public cameraDebugControls: CameraDebugControls;
   private canvas: HTMLCanvasElement;
   private isPointerLocked: boolean = false;
-  private mouseSensitivity: number = 1.0;
+  private mouseSensitivity: number = 0.8;
   public debugMode: boolean = false;
 
   constructor(canvas: HTMLCanvasElement) {
