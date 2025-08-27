@@ -1,5 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
 import { Spaceship } from './Spaceship';
 import { CameraController } from './CameraController';
 import { InputHandler } from './InputHandler';
@@ -25,6 +26,7 @@ class Game {
   
   // Scene objects
   private moon: THREE.Mesh;
+  private moonPhysicsBody: CANNON.Body;
   private starField: THREE.Points;
 
   // UI Elements
@@ -51,9 +53,9 @@ class Game {
     this.setupUI();
     this.setupScene();
     this.setupLighting();
+    this.setupPhysics();
     this.setupMoon();
     this.setupStarField();
-    this.setupPhysics();
     this.setupSpaceship();
     this.setupCamera();
     this.setupInput();
@@ -158,6 +160,27 @@ class Game {
     
     // Add to scene
     this.scene.add(this.moon);
+
+    // Create physics body for Moon collision
+    this.createMoonPhysics();
+  }
+
+  private createMoonPhysics(): void {
+    // Create sphere collision shape for Moon
+    const moonShape = new CANNON.Sphere(50); // Same radius as visual Moon
+    
+    this.moonPhysicsBody = new CANNON.Body({
+      mass: 0, // Static body (infinite mass)
+      shape: moonShape,
+      position: new CANNON.Vec3(200, 100, 300), // Same position as visual Moon
+      material: new CANNON.Material({
+        friction: 0.3,
+        restitution: 0.8 // Bouncy collision
+      })
+    });
+
+    // Add to physics world
+    this.physicsWorld.addBody(this.moonPhysicsBody);
   }
 
   private setupStarField(): void {

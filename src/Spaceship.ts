@@ -15,11 +15,12 @@ export class Spaceship {
   public currentSpeed: number;
 
   // Physics constants
-  private readonly THRUST_POWER = 150;      // Increased from 50 for faster acceleration
-  private readonly ROTATION_TORQUE = 25;    // Increased from 10 for more responsive turning
-  private readonly LINEAR_DAMPING = 0.1;    // Reduced from 0.4 for higher top speed
-  private readonly ANGULAR_DAMPING = 0.6;   // Reduced from 0.8 for less rotation damping
-  private readonly MOUSE_SENSITIVITY = 0.003; // Slightly increased base sensitivity
+  private readonly THRUST_POWER = 150;
+  private readonly ROTATION_TORQUE = 25;      // Increased for faster turning
+  private readonly LINEAR_DAMPING = 0.1;
+  private readonly ANGULAR_DAMPING = 0.8;     // High damping to prevent spinning
+  private readonly MOUSE_SENSITIVITY = 0.005; // Increased sensitivity for faster turns
+  private readonly MAX_ROLL_ANGLE = Math.PI / 6; // 30 degrees max roll (banking only)
   
   // Movement thresholds
   private readonly MOUSE_THRESHOLD = 0.1;
@@ -113,42 +114,102 @@ export class Spaceship {
     this.physicsBody.force.set(0, 0, 0);
     this.physicsBody.torque.set(0, 0, 0);
 
-    // Apply thrust forces (like your snippet!)
+    // Apply thrust forces
     if (controls.forward) {
-      // Apply local forward thrust
       const thrustForce = new CANNON.Vec3(0, 0, this.THRUST_POWER);
       this.physicsBody.applyLocalForce(thrustForce, new CANNON.Vec3(0, 0, 0));
     }
     if (controls.backward) {
-      // Apply local backward thrust (weaker)
       const thrustForce = new CANNON.Vec3(0, 0, -this.THRUST_POWER * 0.5);
       this.physicsBody.applyLocalForce(thrustForce, new CANNON.Vec3(0, 0, 0));
     }
 
-    // Apply torque for rotation based on mouse movement
+    // Get current roll angle to enforce limits
+    const currentRoll = this.getCurrentRollAngle();
+    
+    // Apply yaw and pitch torque (increased for faster turning)
     if (Math.abs(mouseX) > this.MOUSE_THRESHOLD) {
-      // Yaw torque (left/right turning)
+      // Yaw torque (left/right turning) - faster response
       const yawTorque = -mouseX * this.MOUSE_SENSITIVITY * this.ROTATION_TORQUE;
       this.physicsBody.torque.y += yawTorque;
     }
     
     if (Math.abs(mouseY) > this.MOUSE_THRESHOLD) {
-      // Pitch torque (up/down turning)
+      // Pitch torque (up/down turning) - faster response
       const pitchTorque = -mouseY * this.MOUSE_SENSITIVITY * this.ROTATION_TORQUE;
       this.physicsBody.torque.x += pitchTorque;
     }
 
-    // Auto-roll based on yaw input for realistic banking
+    // Handle roll with strict limits - NO BARREL ROLLS ALLOWED
     if (Math.abs(mouseX) > this.MOUSE_THRESHOLD) {
-      const rollTorque = mouseX * this.MOUSE_SENSITIVITY * this.ROTATION_TORQUE * 0.5;
-      this.physicsBody.torque.z += rollTorque;
+      // Only apply banking roll if within limits
+      const targetBankingAngle = mouseX * this.MOUSE_SENSITIVITY * this.MAX_ROLL_ANGLE;
+      const rollDifference = targetBankingAngle - currentRoll;
+      
+      // Apply torque toward target banking angle (limited)
+      if (Math.abs(currentRoll) < this.MAX_ROLL_ANGLE || 
+          (currentRoll > 0 && rollDifference < 0) || 
+          (currentRoll < 0 && rollDifference > 0)) {
+        const rollTorque = rollDifference * this.ROTATION_TORQUE * 0.5;
+        this.physicsBody.torque.z += rollTorque;
+      }
+    } else {
+      // Auto-level: return to zero roll when not turning
+      const levelingTorque = -currentRoll * this.ROTATION_TORQUE * 0.8;
+      this.physicsBody.torque.z += levelingTorque;
     }
+
+    // Emergency roll limiting - hard prevent barrel rolls
+    if (Math.abs(currentRoll) > this.MAX_ROLL_ANGLE) {
+      // Strong counter-torque to prevent exceeding limits
+      const emergencyTorque = -Math.sign(currentRoll) * this.ROTATION_TORQUE * 2;
+      this.physicsBody.torque.z = emergencyTorque;
+    }
+
+    // Upright correction system - prevent upside down orientation
+    this.ensureUpright();
 
     // Sync Three.js group with physics body
     this.syncWithPhysicsBody();
 
     // Update current speed for UI display
     this.currentSpeed = this.physicsBody.velocity.length();
+  }
+
+  private getCurrentRollAngle(): number {
+    // Extract roll angle from quaternion
+    const q = this.physicsBody.quaternion;
+    // Convert quaternion to Euler angle for roll (Z-axis rotation)
+    const roll = Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z));
+    return roll;
+  }
+
+  private ensureUpright(): void {
+    // Check if ship is upside down by looking at the "up" vector
+    const upVector = new CANNON.Vec3(0, 1, 0);
+    this.physicsBody.quaternion.vmult(upVector, upVector);
+    
+    // If Y component is negative, ship is upside down
+    if (upVector.y < -0.3) { // Allow some tolerance
+      // Calculate correction torque to flip right-side up
+      const correctionStrength = this.ROTATION_TORQUE * 3; // Strong correction
+      
+      // Apply torque to roll the ship upright
+      // Determine which direction to roll based on current orientation
+      const currentRoll = this.getCurrentRollAngle();
+      
+      if (Math.abs(currentRoll) > Math.PI / 2) {
+        // Ship is more than 90° rolled, correct it
+        const correctionTorque = currentRoll > 0 ? -correctionStrength : correctionStrength;
+        this.physicsBody.torque.z += correctionTorque;
+      }
+      
+      // Also add a general upward torque around X-axis to help flip
+      if (upVector.y < -0.7) { // Very upside down
+        const pitchCorrection = this.ROTATION_TORQUE * 2;
+        this.physicsBody.torque.x += upVector.z > 0 ? pitchCorrection : -pitchCorrection;
+      }
+    }
   }
 
   private syncWithPhysicsBody(): void {
