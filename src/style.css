@@ -89,6 +89,51 @@ html, body {
   border-radius: 4px;
 }
 
+.sensitivity-control {
+  margin: 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sensitivity-control label {
+  font-size: 12px;
+  min-width: 90px;
+}
+
+.sensitivity-control input[type="range"] {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.sensitivity-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #00ff00;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.sensitivity-control input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #00ff00;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.sensitivity-control span {
+  font-size: 12px;
+  min-width: 25px;
+  text-align: right;
+}
+
 .controls-info {
   margin-top: 10px;
   font-size: 12px;

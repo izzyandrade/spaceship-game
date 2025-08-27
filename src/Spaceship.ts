@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { PhysicsWorld } from './PhysicsWorld';
 
 export interface SpaceshipControls {
   forward: boolean;
@@ -9,32 +11,47 @@ export interface SpaceshipControls {
 
 export class Spaceship {
   public group: THREE.Group;
-  public velocity: THREE.Vector3;
-  public acceleration: THREE.Vector3;
-  public position: THREE.Vector3;
-  public targetRotation: THREE.Euler;
+  public physicsBody: CANNON.Body;
   public currentSpeed: number;
 
   // Physics constants
-  private readonly MAX_SPEED = 0.5;
-  private readonly ACCELERATION = 0.02;
-  private readonly DRAG_COEFFICIENT = 0.95;
-  private readonly MOUSE_SENSITIVITY = 0.002; // More responsive
-  private readonly BANKING_AMOUNT = Math.PI / 8; // 22.5 degrees max bank
+  private readonly THRUST_POWER = 150;      // Increased from 50 for faster acceleration
+  private readonly ROTATION_TORQUE = 25;    // Increased from 10 for more responsive turning
+  private readonly LINEAR_DAMPING = 0.1;    // Reduced from 0.4 for higher top speed
+  private readonly ANGULAR_DAMPING = 0.6;   // Reduced from 0.8 for less rotation damping
+  private readonly MOUSE_SENSITIVITY = 0.003; // Slightly increased base sensitivity
   
-  // Movement thresholds (more permissive)
-  private readonly MOUSE_THRESHOLD = 0.1; // Lower threshold for responsiveness
-  private readonly LATERAL_MOVEMENT_FACTOR = 0.2; // Subtle lateral movement when turning
+  // Movement thresholds
+  private readonly MOUSE_THRESHOLD = 0.1;
 
-  constructor() {
+  constructor(physicsWorld: PhysicsWorld) {
     this.group = new THREE.Group();
-    this.velocity = new THREE.Vector3(0, 0, 0);
-    this.acceleration = new THREE.Vector3(0, 0, 0);
-    this.position = new THREE.Vector3(0, 0, 0);
-    this.targetRotation = new THREE.Euler(0, 0, 0);
     this.currentSpeed = 0;
 
     this.createSpaceshipGeometry();
+    this.createPhysicsBody(physicsWorld);
+  }
+
+  private createPhysicsBody(physicsWorld: PhysicsWorld): void {
+    // Create a box shape for the spaceship physics
+    const shape = new CANNON.Box(new CANNON.Vec3(1, 0.5, 2));
+    
+    this.physicsBody = new CANNON.Body({
+      mass: 10,
+      shape: shape,
+      position: new CANNON.Vec3(0, 0, 0),
+      material: new CANNON.Material({
+        friction: 0.1,
+        restitution: 0.3
+      })
+    });
+
+    // Set damping for realistic spaceship physics
+    this.physicsBody.linearDamping = this.LINEAR_DAMPING;
+    this.physicsBody.angularDamping = this.ANGULAR_DAMPING;
+
+    // Add to physics world
+    physicsWorld.addBody(this.physicsBody);
   }
 
   private createSpaceshipGeometry(): void {
@@ -92,67 +109,58 @@ export class Spaceship {
     const mouseX = Math.abs(controls.mouseX) > this.MOUSE_THRESHOLD ? controls.mouseX : 0;
     const mouseY = Math.abs(controls.mouseY) > this.MOUSE_THRESHOLD ? controls.mouseY : 0;
     
-    // Mouse controls for rotation (yaw and pitch) with reduced sensitivity
-    this.targetRotation.y += mouseX * this.MOUSE_SENSITIVITY;
-    this.targetRotation.x += mouseY * this.MOUSE_SENSITIVITY;
-    
-    // Limit pitch to reasonable range
-    this.targetRotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, this.targetRotation.x));
+    // Reset forces and torques
+    this.physicsBody.force.set(0, 0, 0);
+    this.physicsBody.torque.set(0, 0, 0);
 
-    // Banking animation - roll into turns based on yaw change
-    const yawInput = mouseX * this.MOUSE_SENSITIVITY;
-    this.targetRotation.z = -yawInput * this.BANKING_AMOUNT;
-
-    // Smooth rotation interpolation (more responsive)
-    this.group.rotation.x = THREE.MathUtils.lerp(this.group.rotation.x, this.targetRotation.x, 0.08);
-    this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.targetRotation.y, 0.08);
-    this.group.rotation.z = THREE.MathUtils.lerp(this.group.rotation.z, this.targetRotation.z, 0.06);
-
-    // Reset acceleration
-    this.acceleration.set(0, 0, 0);
-
-    // Forward/backward acceleration based on spaceship's current direction
-    const forwardDirection = new THREE.Vector3(0, 0, 1);
-    forwardDirection.applyQuaternion(this.group.quaternion);
-
+    // Apply thrust forces (like your snippet!)
     if (controls.forward) {
-      this.acceleration.add(forwardDirection.multiplyScalar(this.ACCELERATION));
+      // Apply local forward thrust
+      const thrustForce = new CANNON.Vec3(0, 0, this.THRUST_POWER);
+      this.physicsBody.applyLocalForce(thrustForce, new CANNON.Vec3(0, 0, 0));
     }
     if (controls.backward) {
-      this.acceleration.add(forwardDirection.multiplyScalar(-this.ACCELERATION * 0.5));
+      // Apply local backward thrust (weaker)
+      const thrustForce = new CANNON.Vec3(0, 0, -this.THRUST_POWER * 0.5);
+      this.physicsBody.applyLocalForce(thrustForce, new CANNON.Vec3(0, 0, 0));
     }
 
-    // Add subtle lateral movement when turning (like a real aircraft)
+    // Apply torque for rotation based on mouse movement
     if (Math.abs(mouseX) > this.MOUSE_THRESHOLD) {
-      const rightDirection = new THREE.Vector3(1, 0, 0);
-      rightDirection.applyQuaternion(this.group.quaternion);
-      
-      // Move right when turning right (negative mouseX), left when turning left (positive mouseX)
-      const lateralForce = -mouseX * this.LATERAL_MOVEMENT_FACTOR * this.ACCELERATION;
-      this.acceleration.add(rightDirection.multiplyScalar(lateralForce));
+      // Yaw torque (left/right turning)
+      const yawTorque = -mouseX * this.MOUSE_SENSITIVITY * this.ROTATION_TORQUE;
+      this.physicsBody.torque.y += yawTorque;
+    }
+    
+    if (Math.abs(mouseY) > this.MOUSE_THRESHOLD) {
+      // Pitch torque (up/down turning)
+      const pitchTorque = -mouseY * this.MOUSE_SENSITIVITY * this.ROTATION_TORQUE;
+      this.physicsBody.torque.x += pitchTorque;
     }
 
-    // Apply acceleration to velocity
-    this.velocity.add(this.acceleration);
-
-    // Apply drag (momentum conservation with gradual deceleration)
-    this.velocity.multiplyScalar(this.DRAG_COEFFICIENT);
-
-    // Limit maximum speed
-    if (this.velocity.length() > this.MAX_SPEED) {
-      this.velocity.normalize().multiplyScalar(this.MAX_SPEED);
+    // Auto-roll based on yaw input for realistic banking
+    if (Math.abs(mouseX) > this.MOUSE_THRESHOLD) {
+      const rollTorque = mouseX * this.MOUSE_SENSITIVITY * this.ROTATION_TORQUE * 0.5;
+      this.physicsBody.torque.z += rollTorque;
     }
+
+    // Sync Three.js group with physics body
+    this.syncWithPhysicsBody();
 
     // Update current speed for UI display
-    this.currentSpeed = this.velocity.length();
+    this.currentSpeed = this.physicsBody.velocity.length();
+  }
 
-    // Apply velocity to position
-    this.position.add(this.velocity);
-    this.group.position.copy(this.position);
+  private syncWithPhysicsBody(): void {
+    // Copy position from physics body to Three.js group
+    this.group.position.copy(PhysicsWorld.cannonVecToThree(this.physicsBody.position));
+    
+    // Copy rotation from physics body to Three.js group
+    this.group.quaternion.copy(PhysicsWorld.cannonQuatToThree(this.physicsBody.quaternion));
   }
 
   public getPosition(): THREE.Vector3 {
-    return this.position.clone();
+    return PhysicsWorld.cannonVecToThree(this.physicsBody.position);
   }
 
   public getForwardDirection(): THREE.Vector3 {
@@ -166,6 +174,6 @@ export class Spaceship {
   }
 
   public getVelocity(): THREE.Vector3 {
-    return this.velocity.clone();
+    return PhysicsWorld.cannonVecToThree(this.physicsBody.velocity);
   }
 }

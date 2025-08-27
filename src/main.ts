@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Spaceship } from './Spaceship';
 import { CameraController } from './CameraController';
 import { InputHandler } from './InputHandler';
-import { CollisionSystem } from './CollisionSystem';
+import { PhysicsWorld } from './PhysicsWorld';
 
 class Game {
   private scene: THREE.Scene;
@@ -12,7 +12,7 @@ class Game {
   private spaceship: Spaceship;
   private cameraController: CameraController;
   private inputHandler: InputHandler;
-  private collisionSystem: CollisionSystem;
+  private physicsWorld: PhysicsWorld;
   private clock: THREE.Clock;
 
   // Lighting
@@ -22,6 +22,10 @@ class Game {
   // Debug helpers
   private gridHelper: THREE.GridHelper;
   private axesHelper: THREE.AxesHelper;
+  
+  // Scene objects
+  private moon: THREE.Mesh;
+  private starField: THREE.Points;
 
   // UI Elements
   private crosshair: HTMLElement;
@@ -31,6 +35,7 @@ class Game {
   private speedValue: HTMLElement;
   private speedFill: HTMLElement;
   private sensitivityValue: HTMLElement;
+  private sensitivitySlider: HTMLInputElement;
 
   constructor() {
     this.scene = new THREE.Scene();
@@ -46,10 +51,12 @@ class Game {
     this.setupUI();
     this.setupScene();
     this.setupLighting();
+    this.setupMoon();
+    this.setupStarField();
+    this.setupPhysics();
     this.setupSpaceship();
     this.setupCamera();
     this.setupInput();
-    this.setupCollision();
     this.setupEventListeners();
     this.animate();
   }
@@ -89,8 +96,105 @@ class Game {
     this.scene.add(this.directionalLight);
   }
 
+  private setupMoon(): void {
+    // Create Moon geometry
+    const moonGeometry = new THREE.SphereGeometry(50, 32, 32);
+    
+    // Create Moon material with realistic lunar appearance
+    const moonMaterial = new THREE.MeshPhongMaterial({
+      color: 0xaaaaaa,
+      shininess: 1,
+      specular: 0x111111
+    });
+
+    // Add some basic crater-like texture using bump mapping
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const context = canvas.getContext('2d')!;
+    
+    // Create a gradient base
+    const gradient = context.createRadialGradient(256, 256, 0, 256, 256, 256);
+    gradient.addColorStop(0, '#ffffff');
+    gradient.addColorStop(0.3, '#cccccc');
+    gradient.addColorStop(0.7, '#999999');
+    gradient.addColorStop(1, '#666666');
+    
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 512, 512);
+    
+    // Add some random craters/spots
+    for (let i = 0; i < 50; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      const radius = Math.random() * 20 + 5;
+      const darkness = Math.random() * 0.3 + 0.1;
+      
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fillStyle = `rgba(0, 0, 0, ${darkness})`;
+      context.fill();
+      
+      // Add small bright rim
+      context.beginPath();
+      context.arc(x, y, radius * 1.1, 0, Math.PI * 2);
+      context.strokeStyle = `rgba(255, 255, 255, ${darkness * 0.5})`;
+      context.lineWidth = 1;
+      context.stroke();
+    }
+    
+    const moonTexture = new THREE.CanvasTexture(canvas);
+    moonMaterial.map = moonTexture;
+    
+    // Create Moon mesh
+    this.moon = new THREE.Mesh(moonGeometry, moonMaterial);
+    
+    // Position Moon in the distance (visible and provides good reference)
+    this.moon.position.set(200, 100, 300);
+    
+    // Enable shadows
+    this.moon.receiveShadow = true;
+    this.moon.castShadow = true;
+    
+    // Add to scene
+    this.scene.add(this.moon);
+  }
+
+  private setupStarField(): void {
+    // Create star field for background reference
+    const starCount = 1000;
+    const starGeometry = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(starCount * 3);
+    
+    // Generate random star positions in a large sphere
+    for (let i = 0; i < starCount; i++) {
+      const radius = 800 + Math.random() * 200; // Far away stars
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(Math.random() * 2 - 1);
+      
+      starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+      starPositions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+      starPositions[i * 3 + 2] = radius * Math.cos(phi);
+    }
+    
+    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    
+    const starMaterial = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 2,
+      sizeAttenuation: true
+    });
+    
+    this.starField = new THREE.Points(starGeometry, starMaterial);
+    this.scene.add(this.starField);
+  }
+
+  private setupPhysics(): void {
+    this.physicsWorld = new PhysicsWorld();
+  }
+
   private setupSpaceship(): void {
-    this.spaceship = new Spaceship();
+    this.spaceship = new Spaceship(this.physicsWorld);
     this.scene.add(this.spaceship.group);
     
     // Enable shadows for spaceship
@@ -114,6 +218,15 @@ class Game {
     this.speedValue = document.getElementById('speed-value')!;
     this.speedFill = document.getElementById('speed-fill')!;
     this.sensitivityValue = document.getElementById('sensitivity-value')!;
+    this.sensitivitySlider = document.getElementById('sensitivity-slider') as HTMLInputElement;
+
+    // Set up sensitivity slider event listener
+    this.sensitivitySlider.addEventListener('input', (event) => {
+      const target = event.target as HTMLInputElement;
+      const sensitivity = parseFloat(target.value);
+      this.inputHandler.setMouseSensitivity(sensitivity);
+      this.sensitivityValue.textContent = sensitivity.toFixed(1);
+    });
   }
 
   private setupInput(): void {
@@ -121,10 +234,6 @@ class Game {
     this.inputHandler = new InputHandler(canvas);
   }
 
-  private setupCollision(): void {
-    this.collisionSystem = new CollisionSystem();
-    this.collisionSystem.addToScene(this.scene);
-  }
 
   private setupEventListeners(): void {
     window.addEventListener('resize', () => {
@@ -139,11 +248,11 @@ class Game {
 
     const deltaTime = this.clock.getDelta();
 
+    // Update physics world
+    this.physicsWorld.update(deltaTime);
+
     // Update spaceship based on input
     this.spaceship.update(this.inputHandler.spaceshipControls, deltaTime);
-
-    // Check collisions
-    this.collisionSystem.checkCollision(this.spaceship);
 
     // Update camera to follow spaceship
     this.cameraController.update(this.spaceship, this.inputHandler.cameraDebugControls);
@@ -159,30 +268,26 @@ class Game {
   };
 
   private updateUI(): void {
-    // Update speed indicator
+    // Update speed indicator  
     const speed = this.spaceship.getCurrentSpeed();
-    const maxSpeed = 0.5; // Same as spaceship MAX_SPEED
-    const speedPercent = (speed / maxSpeed) * 100;
+    const maxDisplaySpeed = 100; // Higher max for display (no artificial limit)
+    const speedPercent = Math.min((speed / maxDisplaySpeed) * 100, 100);
     
     this.speedValue.textContent = speed.toFixed(2);
     this.speedFill.style.width = `${speedPercent}%`;
 
-    // Update sensitivity display
-    this.sensitivityValue.textContent = this.inputHandler.getMouseSensitivity().toFixed(1);
+    // Sensitivity display is handled by slider event listener
 
     // Show/hide UI elements based on pointer lock
     const isLocked = this.inputHandler.isPointerLockActive();
     this.crosshair.style.display = isLocked ? 'block' : 'none';
     this.pointerLockPrompt.style.display = isLocked ? 'none' : 'block';
 
-    // Boundary warning
-    const spaceshipPos = this.spaceship.getPosition();
-    const nearBoundary = this.collisionSystem.isNearBoundary(spaceshipPos);
-    this.boundaryWarning.style.display = nearBoundary ? 'block' : 'none';
+    // Hide boundary warning for now (physics handles collisions)
+    this.boundaryWarning.style.display = 'none';
 
-    // Debug mode - show collision boundaries
+    // Debug mode - show helpers
     if (this.inputHandler.debugMode) {
-      this.collisionSystem.toggleDebugVisualization();
       this.gridHelper.visible = true;
       this.axesHelper.visible = true;
     } else {
